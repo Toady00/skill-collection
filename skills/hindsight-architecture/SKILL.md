@@ -1,0 +1,447 @@
+---
+name: hindsight-architecture
+description: Use when designing Hindsight memory bank architecture, tags, entity labels, observation scopes, mental models, or bank templates for agent memory systems.
+version: 0.1.0
+---
+
+# Hindsight Architecture
+
+Use this skill to help a user design an effective Hindsight memory
+architecture. The goal is to convert a messy real-world operating model into a
+small number of memory banks, a disciplined tag taxonomy, and reusable bank
+templates that let agents recall useful context without unnecessary
+orchestration.
+
+## Core Principle
+
+Treat a Hindsight memory bank as an isolated brain for a durable world, not as
+a folder, topic, or agent profile.
+
+Use memory banks for hard boundaries. Use tags for views inside a bank.
+
+Good bank boundaries usually come from:
+
+- Privacy or access-control isolation
+- Different memory subjects that should not influence each other
+- Different bank-level missions, directives, disposition, or extraction behavior
+- Very high-volume or noisy memory streams that would degrade retrieval
+- Separate corpora where cross-domain reasoning is rarely useful
+
+Good tag boundaries usually come from:
+
+- Domain, topic, source, session, repo, service, feature, or workflow
+- Agent harness or agent profile that wrote the memory
+- Memory shape such as ADR, spec, runbook, decision, risk, or open question
+- Visibility tiers inside an otherwise shared context
+- Filters needed for recall, reflect, observations, or mental models
+
+## Vocabulary
+
+Avoid treating the word "agent" as precise. Ask what the user means.
+
+- Harness: The runtime that calls the LLM and tools, such as opencode, Claude Code, OpenClaw, CI reviewers, or monitoring automations.
+- Harness agent/profile: A named instruction set or persona inside a harness, such as `spec-writer`, `testing`, `architect`, or `reviewer`.
+- Memory consumer: Anything that reads memory.
+- Memory writer: Anything that retains memory.
+- Memory subject: What the memory is about, such as a person, company, platform, repo, service, customer, incident, or product.
+- Memory bank: An isolated Hindsight brain for one memory subject or hard boundary.
+- Tags: Structured dimensions and visibility filters inside a bank.
+
+A different harness agent/profile is not by itself a reason to create a
+separate bank. If `spec-writer` and `testing` both work on the same codebase,
+they usually belong in the same project/platform bank with `agent_profile:*`
+tags.
+
+## First Answer To Give
+
+When the user asks whether all of this is configurable via a memory bank
+template, answer:
+
+Hindsight bank templates are the right place to capture bank-level
+configuration such as missions, entity labels, directives, observation
+behavior, mental models, and reusable defaults. Templates should not be treated
+as the only place to enforce architecture. Some architecture lives in client or
+integration configuration, especially default retain tags, recall filters,
+dynamic bank IDs, source tags, and per-harness behavior.
+
+In practice:
+
+- Put stable bank behavior in the Hindsight bank template.
+- Put writer-specific tags and source metadata in opencode, OpenClaw, CI, ingestion jobs, and other integrations.
+- Put operating conventions in documentation or a skill so future agents apply them consistently.
+
+## Interview Workflow
+
+Ask only the questions needed to disambiguate the architecture. Prefer a
+concise interview over a long form.
+
+1. Identify memory subjects.
+
+Ask what durable worlds need memory. Examples: personal memory, company memory,
+platform memory, customer memory, research corpus, observability stream.
+
+2. Identify hard boundaries.
+
+Ask what must not leak or cross-influence. Examples: personal vs company,
+customer A vs customer B, restricted legal/finance data, generated market
+research vs operating knowledge.
+
+3. Identify cross-domain reasoning needs.
+
+Ask which topics must be reasoned about together. If the user needs one
+conversation to move between business, product, engineering, and operations,
+prefer one shared bank with tags.
+
+4. Identify writers and consumers.
+
+List harnesses, agent profiles, CI jobs, ingestion pipelines, monitoring
+systems, chat interfaces, and humans. Treat these as source/profile tags unless
+they need hard isolation.
+
+5. Identify retrieval modes.
+
+Ask whether default recall should be broad, scoped, or strict. Broad default
+recall favors fewer banks. Strict per-user/customer recall favors either
+separate banks or mandatory strict tags.
+
+6. Identify high-volume/noisy streams.
+
+Separate or defer high-volume observability, public research corpora, raw
+market data, logs, and generated analysis artifacts if they might overwhelm
+durable operating memory.
+
+7. Define mental models.
+
+Use mental models as curated cross-sections of one bank, not as a substitute
+for bank design. Prefer narrow mental models over one giant summary.
+
+## Decision Heuristics
+
+Use one shared bank when:
+
+- The user wants easy transitions between roles or domains.
+- Cross-domain reasoning is a major feature.
+- Multiple harnesses work on the same company, product, platform, or repo.
+- The cost of multi-bank orchestration would be high.
+- Privacy can be handled by strict tags and operating discipline.
+
+Use multiple banks when:
+
+- Data isolation is more important than cross-domain reasoning.
+- Recall should never mix two subjects by accident.
+- Bank-level config differs materially.
+- One corpus is large/noisy enough to harm retrieval in the main bank.
+- Different subjects need different directives or dispositions during reflect.
+
+Use tags when:
+
+- You want to categorize related memories.
+- You want to know where a memory came from.
+- You want per-session, per-agent-profile, per-service, or per-feature views.
+- You want to filter by memory shape.
+- You want scoped observations or mental models within a shared world.
+
+## Tag Rules
+
+Tags are visibility and retrieval filters. Metadata is for provenance and UI
+linking, not filtering.
+
+For shared banks, always establish a small required tag set for writers:
+
+- `source:<system>` for where the memory came from
+- `domain:<domain>` for broad area
+- `memory_type:<type>` for shape
+- `scope:<scope>` or `visibility:<tier>` when access matters
+- A subject tag such as `user:<id>`, `company:<id>`, `repo:<name>`, `service:<name>`, or `customer:<id>` when applicable
+
+Prefer strict tag matching for partitioned data:
+
+- `any_strict` means at least one requested tag must be present and untagged memories are excluded.
+- `all_strict` means all requested tags must be present and untagged memories are excluded.
+- Avoid `tags_match="any"` in multi-tenant or privacy-sensitive banks unless untagged memories are intentionally global.
+- Use `tag_groups` for complex boolean filters.
+
+## Entity Labels
+
+Recommend entity labels with `tag: true` for stable classifications that future
+recalls should filter on.
+
+Good entity label dimensions:
+
+- `domain`: business, product, engineering, infrastructure, operations, finance, legal, research
+- `memory_type`: mission, vision, adr, design-doc, spec, user-journey, feature, runbook, decision, risk, open-question, incident, research-note
+- `status`: proposed, accepted, deprecated, active, blocked, resolved
+- `system`: platform, web-app, analysis-engine, market-data, infra
+- `infra`: aws, terraform, kubernetes, flux, postgres, redis
+
+Use controlled enum values when possible. Free-text labels are less reliable
+because wording may drift.
+
+## Observation Scopes
+
+Use observation scopes when a shared bank needs durable patterns at specific
+tag levels.
+
+- `combined`: best for simple single-subject banks.
+- `per_tag`: best when individual tags represent independent subjects, such as user, team, service, or project.
+- `all_combinations`: powerful but expensive; avoid as a default.
+- Custom scopes: best for precise multi-dimensional memory such as user-level, team-level, and combined observations.
+
+For most serious shared-bank architectures, recommend explicit custom scopes
+for the few combinations that matter.
+
+## Mental Models
+
+Use mental models to make broad banks usable. They provide curated, fast,
+reusable views of the memory bank.
+
+Prefer narrow mental models tailored to the use case.
+
+Personal assistant examples:
+
+- User Profile
+- Current Commitments
+- Communication Preferences
+- Important Relationships
+- Health, Travel, and Scheduling Preferences
+- Current Projects and Goals
+
+Customer support examples:
+
+- Customer Account Summary
+- Product Entitlements and Configuration
+- Open Support Risks
+- Prior Resolutions
+- Escalation History
+- Common Issue Patterns
+
+Company or platform examples:
+
+- Company Mission and Strategy
+- Go-Live Plan
+- Product Vision
+- Target Customer and User Journeys
+- Platform Architecture
+- Bounded Context Map
+- Infrastructure Architecture
+- Engineering Principles and ADR Summary
+- Current Risks and Open Questions
+- Operating Principles
+
+Research or analyst examples:
+
+- Research Thesis
+- Evidence Summary
+- Contradictions and Open Questions
+- Source Quality Notes
+- Current Recommendations
+
+Avoid a single mental model called "Everything" or "All Context". It will be
+low quality and hard to refresh.
+
+Tags on a mental model both filter which memories build it and control which
+recall/reflect calls can see it. Use this to create scoped models inside a
+shared bank.
+
+## Architecture Archetypes
+
+Use archetypes as starting points, not rules. Always adjust for privacy,
+cross-domain reasoning, retrieval quality, and operational complexity.
+
+### Personal Assistant Or Second Brain
+
+Default to one bank for the person.
+
+- Bank: `user:<id>` or a stable personal name.
+- Use tags for life domains, projects, source systems, people, topics, and sensitivity.
+- Use broad default recall because the assistant's value comes from connecting personal context across domains.
+- Add a separate bank only for hard boundaries such as work vs personal, sensitive legal/medical notes, or high-volume document/research corpora.
+
+Common tags: `domain:personal`, `domain:work`, `domain:health`,
+`domain:travel`, `project:<name>`, `person:<name>`, `source:<system>`,
+`sensitivity:private`, `memory_type:preference`, `memory_type:commitment`,
+`memory_type:goal`.
+
+### Customer Support Or Customer Success
+
+Choose between one shared customer-support bank with strict tags and one bank
+per customer/user based on isolation requirements.
+
+- Use one shared bank when cross-customer aggregate analysis is important and tag discipline is enforceable.
+- Use one bank per customer or user when data isolation is a hard requirement or accidental leakage would be unacceptable.
+- If using one shared bank, every retained customer memory must carry `customer:<id>` or `user:<id>` and recalls must use `any_strict` or `all_strict`.
+- Keep public product documentation either untagged global only if safe, tagged as `scope:global`, or in a separate product-docs bank if it is large.
+
+Common tags: `customer:<id>`, `user:<id>`, `account:<id>`,
+`product:<name>`, `plan:<tier>`, `case:<id>`, `severity:<level>`,
+`status:open`, `status:resolved`, `memory_type:ticket`,
+`memory_type:resolution`, `memory_type:escalation`, `scope:global`.
+
+### Company, Product, Or Platform Builder
+
+Default to one company/platform bank when the user needs to move fluidly across
+business, product, engineering, infrastructure, and operations.
+
+- Bank: company, product, or platform name.
+- Use tags for business domains, product areas, repos, services, infrastructure, source systems, and agent profiles.
+- Add a personal bank for private preferences and individual operating style when needed.
+- Add separate research or observability banks later if those streams become large or noisy.
+- Do not split business, product, engineering, and infrastructure into separate banks unless the user rarely needs to reason across them or has hard access boundaries.
+
+Common tags: `domain:business`, `domain:product`, `domain:engineering`,
+`domain:infrastructure`, `repo:<name>`, `service:<name>`,
+`source:<system>`, `agent_profile:<name>`, `memory_type:adr`,
+`memory_type:spec`, `memory_type:user-journey`, `memory_type:runbook`,
+`memory_type:risk`.
+
+### Multi-Service Engineering Platform
+
+Prefer one platform bank when cross-service reasoning matters.
+
+- Use tags for services, repos, bounded contexts, teams, environments, ADRs, specs, incidents, and runbooks.
+- Use separate service banks only when service-level isolation or retrieval quality matters more than cross-service reasoning.
+- Use mental models for platform architecture, service ownership, ADR summaries, and active risks.
+
+Common tags: `service:<name>`, `repo:<name>`, `team:<name>`,
+`bounded-context:<name>`, `env:prod`, `env:staging`, `memory_type:adr`,
+`memory_type:incident`, `memory_type:runbook`, `memory_type:decision`.
+
+### Research, Analysis, Or Knowledge Corpus
+
+Separate external or generated corpora from operating memory when they are large,
+noisy, or citation-sensitive.
+
+- Use a dedicated research bank for large public documents, filings, papers, generated reports, or source-heavy analysis.
+- Use tags for issuer, topic, source, document type, time period, confidence, and analyst workflow stage.
+- Keep business/product/engineering operating memory in a separate bank if the research corpus would dominate retrieval.
+
+Common tags: `issuer:<ticker>`, `sector:<name>`, `source:<provider>`,
+`document_type:10-k`, `document_type:earnings-call`, `period:<yyyy-qn>`,
+`memory_type:thesis`, `memory_type:risk`, `memory_type:evidence`,
+`confidence:<level>`.
+
+### Observability, Monitoring, Or Incident Automation
+
+Keep high-volume operational streams out of broad human operating memory unless
+they are summarized before retain.
+
+- Use a separate observability bank when retaining frequent alerts, metrics summaries, incident traces, or log-derived observations.
+- Use the main company/platform bank only for durable incident learnings, accepted remediations, and architectural decisions.
+- Prefer summarized incident records over raw logs.
+
+Common tags: `env:<name>`, `service:<name>`, `incident:<id>`,
+`severity:<level>`, `signal:latency`, `signal:error-rate`,
+`memory_type:incident`, `memory_type:remediation`, `memory_type:runbook`.
+
+## Output Format
+
+When producing an architecture recommendation, use this structure:
+
+### Recommendation
+
+State the recommended bank layout in one short paragraph.
+
+### Banks
+
+List each bank with purpose, what belongs there, what does not belong there,
+and why it is or is not separate.
+
+### Tags
+
+Define required tags, recommended tags, and examples.
+
+### Entity Labels
+
+List proposed entity label groups, enum values, and which labels should set
+`tag: true`.
+
+### Observation Scopes
+
+Specify whether to use `combined`, `per_tag`, `all_combinations`, or custom
+scopes.
+
+### Mental Models
+
+List the mental models to create, including suggested tags and refresh
+strategy.
+
+### Integration Defaults
+
+Describe how opencode, OpenClaw, CI, ingestion jobs, and monitoring systems
+should set bank IDs, retain tags, source metadata, and recall behavior.
+
+### Template Boundary
+
+Separate what belongs in a Hindsight bank template from what belongs in
+client/integration configuration.
+
+### Risks
+
+Call out leakage, noisy corpora, tag discipline, over-filtering, and
+over-fragmentation risks.
+
+## Template Boundary Checklist
+
+Put this in a bank template:
+
+- `retain_mission`
+- `observations_mission`
+- `reflect_mission`
+- Disposition traits
+- Entity labels
+- Directives
+- Default recall budget configuration when supported
+- Mental model definitions when supported by the template workflow
+- Bank-level MCP tool allowlists when needed
+
+Put this in integrations or ingestion code:
+
+- Default `bank_id`
+- Dynamic bank ID strategy
+- Default retain tags
+- Default recall tags and `tags_match`
+- Source-specific metadata
+- Document ID conventions
+- Retain cadence
+- Which roles/tool calls to retain
+- Whether a writer should read broadly or with strict filters
+
+Put this in human/agent operating docs:
+
+- Tag naming conventions
+- When to create a new bank
+- When to create a new mental model
+- What should never be retained
+- How to handle sensitive data
+
+## Example Reasoning
+
+Personal assistant: If the user wants a second brain that remembers personal
+preferences, commitments, goals, relationships, travel, health, and work context,
+prefer one personal bank. The assistant's value comes from cross-domain recall.
+Use tags for domains, projects, people, source systems, and sensitivity. Split
+only for hard work/personal/privacy boundaries or large external corpora.
+
+Customer support: If the system serves many customers, decide whether aggregate
+cross-customer learning is worth the operational risk. If yes, use one support
+bank with mandatory `customer:<id>` or `user:<id>` tags and strict recall. If
+leakage would be unacceptable, use one bank per customer or user and optionally a
+separate global product-docs bank.
+
+Company/platform builder: If the user has business operations, product strategy,
+engineering architecture, infrastructure, coding harnesses, and conversational
+interfaces, prefer one company/platform bank. The user's main need is fluid
+cross-domain reasoning. Use tags for business, product, engineering,
+infrastructure, repo, service, source, and agent profile. Add separate banks
+later only for personal private memory, large research corpora, or high-volume
+observability streams.
+
+Research corpus: If the user plans to ingest large volumes of public documents,
+market data, filings, or generated analysis, prefer a dedicated research bank so
+the corpus does not drown out operating memory. Link it conceptually with tags
+and naming, but do not force operational agents to search it by default.
+
+Observability: If monitoring agents retain frequent alerts or metric summaries,
+prefer a separate observability bank or summarize heavily before retaining into
+the platform bank. Durable incident learnings and remediation decisions can be
+promoted into the main platform bank.
