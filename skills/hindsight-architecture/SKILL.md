@@ -12,6 +12,15 @@ small number of memory banks, a disciplined tag taxonomy, and reusable bank
 templates that let agents recall useful context without unnecessary
 orchestration.
 
+This skill has two phases:
+
+- Phase 1: Help the user design the memory architecture.
+- Phase 2: Generate a correct, minimal Hindsight bank template that supports the architecture.
+
+Use `templates/bank-template-defaults.reference.json` as the reference for the
+bank template shape and default values when generating templates. It is a
+reference file, not something to copy wholesale.
+
 ## Core Principle
 
 Treat a Hindsight memory bank as an isolated brain for a durable world, not as
@@ -69,6 +78,72 @@ In practice:
 - Put stable bank behavior in the Hindsight bank template.
 - Put writer-specific tags and source metadata in opencode, OpenClaw, CI, ingestion jobs, and other integrations.
 - Put operating conventions in documentation or a skill so future agents apply them consistently.
+
+When generating a bank template, keep it minimal. Do not explicitly set fields
+that match Hindsight defaults. Only set defaults when the user explicitly asks
+for a fully expanded reference template, and label it as expanded/noisy.
+
+## Reference Template
+
+Before generating a Hindsight bank template, read
+`templates/bank-template-defaults.reference.json` from this skill directory.
+
+Use it to understand:
+
+- The top-level template shape: `version`, `bank`, `mental_models`, and `directives`.
+- Which bank fields have defaults.
+- Which bank fields default to `null` because they are intentionally unset.
+- The object shape for mental models and directives.
+- The trigger shape for mental models.
+
+Do not treat placeholder mental models or directives in the reference file as
+defaults. They show the valid shape for optional user-defined sections. They
+should not appear in generated output unless the architecture calls for real
+mental models or directives.
+
+Never copy every field from the reference file into a generated template. That
+creates noise and hides the user's intentional configuration.
+
+## Generation Rules
+
+Generate minimal templates.
+
+- Omit bank fields that would be set to their default value.
+- Omit `null` fields unless the template format specifically requires them.
+- Omit empty `mental_models` and `directives` arrays unless the user's target format requires arrays to be present.
+- Omit example placeholders from the reference file.
+- Include missions, entity labels, directives, and mental models when they are part of the designed architecture.
+- Include `retain_extraction_mode` only when changing away from the default or when paired with `retain_custom_instructions`.
+- Include `retain_custom_instructions` only when `retain_extraction_mode` is `custom` and custom extraction rules are actually needed.
+- Include disposition traits only when the reflect behavior needs a defensible non-default posture.
+- Include recall budget or consolidation tuning only when the user has a concrete latency, quality, scale, or cost reason.
+- Include `mcp_enabled_tools` only when the architecture needs tool restrictions.
+
+Do not change a default without explaining why. The explanation must be tied to
+the architecture, such as privacy, extraction quality, domain-specific behavior,
+latency, cost, retrieval quality, or operational safety. Prefer leaving defaults
+alone when the reason is weak.
+
+When a value is intentionally omitted because it matches the default, do not
+apologize or add it for completeness. Omission is the correct minimal template.
+
+## Two-Phase Workflow
+
+Phase 1 is architecture design. Do not jump to JSON too early.
+
+- Interview the user using the workflow below.
+- Produce an architecture recommendation.
+- Confirm the bank layout, tag taxonomy, entity labels, observation scopes, mental models, directives, and integration defaults.
+- Identify which parts belong in the Hindsight bank template and which parts belong in clients or ingestion code.
+
+Phase 2 is template generation.
+
+- Read the reference template.
+- Generate one template per bank that needs custom bank-level behavior.
+- Keep each template minimal and intentional.
+- Explain every non-default bank field included.
+- Separately list integration settings that cannot be encoded in the bank template.
+- Provide a validation checklist so the user can review the template before applying it.
 
 ## Interview Workflow
 
@@ -189,6 +264,50 @@ tag levels.
 
 For most serious shared-bank architectures, recommend explicit custom scopes
 for the few combinations that matter.
+
+## Disposition Traits
+
+Disposition traits affect `reflect` only. They do not affect `retain` or
+`recall`. Treat them as reasoning-style controls, not as a substitute for clear
+missions, tags, directives, or retrieval filters.
+
+The effective default posture is balanced. In the reference template the
+disposition fields are `null`, which means the bank uses the server/default
+behavior. Do not explicitly set balanced defaults just for completeness.
+
+Set disposition traits only when the bank itself needs a defensible non-default
+reflect posture. Do not tune dispositions for narrow tasks like "code review" or
+"security review" unless those tasks have their own dedicated bank. For a broad
+company/platform bank, task-specific posture should usually come from the
+reflect query, directives, tool instructions, or the calling harness.
+
+Think in bank archetypes:
+
+- Personal assistant bank: Usually benefits from higher empathy, balanced skepticism, and balanced literalism. The bank is about helping a person across life/work context, so warmth and personalization are useful, but it should still distinguish fact from inference.
+- Company/platform operating bank: Usually balanced or slightly skeptical, balanced-to-higher literalism, and low-to-moderate empathy. The bank spans business, product, engineering, infrastructure, and operations, so the default posture should be grounded and careful without becoming adversarial.
+- Investment research or institutional analysis bank: Usually high skepticism, high literalism, and low-to-moderate empathy. The bank should challenge claims, separate evidence from inference, avoid overstatement, and reason conservatively.
+- Customer-specific support bank: Usually moderate skepticism, moderate literalism, and higher empathy. The bank should understand the customer's history and tone while still checking facts before making claims.
+- Product documentation or product facts bank: Usually higher literalism, moderate-to-high skepticism, and lower empathy. The bank should answer from documented behavior and avoid inventing unsupported product capabilities.
+- Observability or incident knowledge bank: Usually high skepticism, high literalism, and low-to-moderate empathy. The bank should prefer evidence, timestamps, concrete symptoms, and verified remediations.
+- Legal, compliance, policy, or finance operations bank: Usually high skepticism, high literalism, and low empathy unless it is directly user-facing. The bank should be conservative and avoid inference drift.
+
+When one broad bank must serve multiple task postures, leave dispositions closer
+to balanced and encode task posture outside the bank:
+
+- Query framing: "Reflect as a skeptical code reviewer..." or "Analyze this from a customer-success perspective..."
+- Directives: hard rules that should always apply to the bank, such as "Do not invent unsupported product behavior."
+- Mental models: curated scoped views, such as "Product Facts" or "Engineering Principles".
+- Tags: retrieval scoping, not disposition scoping.
+
+If the desired postures would conflict in routine use, prefer separate banks.
+Example: a main company/platform bank may remain balanced, while an investment
+research bank uses high skepticism and literalism. In customer support, a
+customer-specific memory bank can use a more empathetic support posture, while a
+separate product-facts bank can use a stricter documentation posture.
+
+Prefer omitting disposition fields unless the architecture clearly benefits from
+one of these non-default postures. If included in a generated template, explain
+why each trait is set and how it supports the bank's purpose.
 
 ## Mental Models
 
@@ -375,10 +494,50 @@ should set bank IDs, retain tags, source metadata, and recall behavior.
 Separate what belongs in a Hindsight bank template from what belongs in
 client/integration configuration.
 
+### Template Plan
+
+List each template to generate, the non-default fields it needs, and why those
+fields are justified. Explicitly say which defaults will be omitted.
+
 ### Risks
 
 Call out leakage, noisy corpora, tag discipline, over-filtering, and
 over-fragmentation risks.
+
+## Template Output Format
+
+When the user asks for the actual config file, use this structure:
+
+### Template
+
+Provide valid JSON for the minimal Hindsight bank template.
+
+### Non-Default Fields
+
+Explain each non-default field included and why it supports the architecture.
+
+### Defaults Intentionally Omitted
+
+Briefly summarize categories of defaults omitted, such as retain chunk sizing,
+consolidation tuning, recall budget mapping, observation enablement, and default
+entity behavior. Do not list every omitted field unless the user asks.
+
+### Integration Configuration
+
+List required opencode, OpenClaw, CI, ingestion, or monitoring settings that are
+outside the bank template.
+
+### Validation Checklist
+
+Include a short checklist:
+
+- No copied placeholder mental models or directives remain.
+- No field is set to a default value just for completeness.
+- Every non-default bank field has a defensible reason.
+- Entity label values match the proposed tag taxonomy.
+- Mental model tags align with intended visibility and source memory filters.
+- Directives are true hard rules, not general preferences.
+- Integration defaults cover bank ID, retain tags, document IDs, source metadata, and recall filters.
 
 ## Template Boundary Checklist
 
@@ -393,6 +552,10 @@ Put this in a bank template:
 - Default recall budget configuration when supported
 - Mental model definitions when supported by the template workflow
 - Bank-level MCP tool allowlists when needed
+
+Only include these fields when they are intentionally configured. The existence
+of a field in the reference template does not mean it should appear in generated
+output.
 
 Put this in integrations or ingestion code:
 
@@ -413,6 +576,47 @@ Put this in human/agent operating docs:
 - When to create a new mental model
 - What should never be retained
 - How to handle sensitive data
+
+## Minimal Template Example
+
+Use examples like this to demonstrate minimal output. Do not include all default
+bank fields.
+
+```json
+{
+  "version": "1",
+  "bank": {
+    "retain_mission": "Extract durable facts relevant to the user's long-term goals, preferences, commitments, relationships, and active projects. Ignore greetings, filler, and short-lived logistics unless they create future obligations.",
+    "observations_mission": "Synthesize stable preferences, recurring patterns, commitments, and contradictions. Ignore one-off transient state.",
+    "reflect_mission": "You are a personal assistant with long-term memory. Ground answers in retained facts, distinguish known facts from inference, and personalize responses to the user's preferences.",
+    "entity_labels": [
+      {
+        "key": "domain",
+        "description": "The life or work domain this memory belongs to.",
+        "type": "multi-values",
+        "tag": true,
+        "values": [
+          { "value": "personal", "description": "Personal life, preferences, relationships, and routines." },
+          { "value": "work", "description": "Work, projects, professional commitments, and career context." }
+        ]
+      }
+    ]
+  },
+  "mental_models": [
+    {
+      "id": "user-profile",
+      "name": "User Profile",
+      "source_query": "Summarize the user's stable preferences, goals, recurring commitments, and important context for personal assistance.",
+      "tags": ["domain:personal"],
+      "max_tokens": 2048
+    }
+  ]
+}
+```
+
+In this example, defaults such as `retain_extraction_mode: concise`,
+`retain_chunk_size: 3000`, `enable_observations: true`, recall budget mapping,
+and consolidation tuning are intentionally omitted.
 
 ## Example Reasoning
 
