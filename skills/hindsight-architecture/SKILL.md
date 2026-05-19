@@ -1,7 +1,7 @@
 ---
 name: hindsight-architecture
 description: Use when designing Hindsight memory bank architecture, tags, entity labels, observation scopes, mental models, or bank templates for agent memory systems.
-version: 0.1.1
+version: 0.1.2
 ---
 
 # Hindsight Architecture
@@ -307,6 +307,23 @@ supports encoding it. Do not imply that named observation scopes can be set once
 globally in the bank template unless the current Hindsight template schema
 supports that field.
 
+When documenting observation scopes, express them as concrete tag arrays or a
+clear rule for deriving concrete tag arrays at retain time. Do not leave them as
+conceptual labels like "domain scope" or wildcard-like values such as
+`domain:*` unless the integration is explicitly responsible for expanding them
+to actual tags.
+
+Examples:
+
+- Company-level scope: `["company:stacked-chips"]`
+- Domain-level scope for a product memory: `["domain:product"]`
+- Combined company/domain scope: `["company:stacked-chips", "domain:product"]`
+- Repo-level scope: `["repo:main-app"]`
+
+If the user wants both company-wide and domain-specific observations, recommend
+custom `observation_scopes` on retained items, such as
+`[["company:stacked-chips"], ["domain:product"], ["company:stacked-chips", "domain:product"]]`.
+
 - `combined`: best for simple single-subject banks.
 - `per_tag`: best when individual tags represent independent subjects, such as user, team, service, or project.
 - `all_combinations`: powerful but expensive; avoid as a default.
@@ -422,6 +439,7 @@ models.
 Mental model tag guidance:
 
 - Use the fewest tags needed to scope source memories and visibility.
+- Remember that tagged mental models may only be visible to recall/reflect calls whose tag filters match them. If the model should be available during broad untagged reflection, leave `tags` empty or ensure integrations pass matching recall/reflect tags intentionally.
 - Prefer one broad subject tag such as `domain:product` over many `memory_type:*` tags when the model should synthesize several memory types.
 - Do not tag a model with multiple alternative memory types such as `memory_type:mission`, `memory_type:vision`, and `memory_type:decision` unless source memories are expected to carry all of them together.
 - If the model should read an OR set of tags, use `trigger.tag_groups` or another supported filter mechanism from the current template schema instead of stacking tags as if they were descriptive metadata.
@@ -544,7 +562,8 @@ List proposed entity label groups, enum values, and which labels should set
 ### Observation Scopes
 
 Specify whether to use `combined`, `per_tag`, `all_combinations`, or custom
-scopes.
+scopes. For custom scopes, provide concrete tag arrays or a deterministic rule
+for integrations to derive concrete arrays at retain time.
 
 ### Mental Models
 
@@ -606,8 +625,10 @@ Include a short checklist:
 - Every non-default bank field has a defensible reason.
 - Entity label values match the proposed tag taxonomy.
 - Mental model tags align with intended visibility and source memory filters.
+- Tagged mental models that should be broadly visible have matching integration recall/reflect tag strategy, or are left untagged with precise source queries.
 - Mental model tags are not being used as descriptive metadata; long tag lists are checked for accidental over-filtering.
 - OR-style mental model source filters use supported `trigger.tag_groups` or separate models instead of many tags on one model.
+- Observation scopes are concrete retain-time tag arrays or deterministic integration rules, not vague labels.
 - Directives are true hard rules, not general preferences.
 - Integration defaults cover bank ID, retain tags, document IDs, source metadata, and recall filters.
 
