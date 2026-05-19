@@ -1,7 +1,7 @@
 ---
 name: hindsight-architecture
 description: Use when designing Hindsight memory bank architecture, tags, entity labels, observation scopes, mental models, or bank templates for agent memory systems.
-version: 0.1.0
+version: 0.1.1
 ---
 
 # Hindsight Architecture
@@ -181,9 +181,11 @@ separate banks or mandatory strict tags.
 
 6. Identify high-volume/noisy streams.
 
-Separate or defer high-volume observability, public research corpora, raw
-market data, logs, and generated analysis artifacts if they might overwhelm
-durable operating memory.
+Separate, defer, sample, or configure dedicated ingestion for high-volume
+observability, public research corpora, market data, logs, and generated
+analysis artifacts if they might overwhelm durable operating memory. Do not
+recommend pre-summarizing normal conversations, docs, transcripts, specs, or
+agent sessions before retain.
 
 7. Define mental models.
 
@@ -216,6 +218,40 @@ Use tags when:
 - You want to filter by memory shape.
 - You want scoped observations or mental models within a shared world.
 
+## Retain Input Fidelity
+
+Hindsight is designed to ingest rich source material and extract durable facts,
+entities, relationships, observations, and mental models from it. Do not tell
+users to pre-summarize normal source content before retain.
+
+Prefer retaining the richest practical representation available:
+
+- Full conversations or transcripts with clear roles, timestamps, and structure
+- Raw docs, specs, ADRs, runbooks, tickets, and notes
+- Structured JSON conversations when available
+- Tool calls and relevant tool results when they explain decisions or outcomes
+- Stable `document_id` values so updated source material is reprocessed idempotently
+
+Pre-summarizing before retain usually causes fidelity loss. Hindsight would be
+extracting memories from an already-compressed version of the source, which can
+drop temporal details, entity relationships, causal context, uncertainty,
+contradictions, and exact phrasing that Hindsight needs for better extraction.
+
+Use Hindsight's retain strategy, chunking, extraction mode, missions, document
+upserts, async retain, tagging, and bank separation to manage ingestion quality
+and cost before reaching for pre-summarization.
+
+Exceptions are narrow and should be explicit:
+
+- Raw logs, metrics, traces, or event streams that are too large or repetitive to retain directly
+- Third-party corpora where only curated excerpts are legally or operationally appropriate
+- Generated artifacts that duplicate already-retained source material
+- Cases where the user knowingly accepts lower fidelity in exchange for cost, volume, or privacy constraints
+
+Even in exception cases, prefer retaining curated excerpts, structured incident
+records, sampled events, or human/agent-authored postmortems rather than vague
+summaries. Make the tradeoff explicit.
+
 ## Tag Rules
 
 Tags are visibility and retrieval filters. Metadata is for provenance and UI
@@ -241,6 +277,13 @@ Prefer strict tag matching for partitioned data:
 Recommend entity labels with `tag: true` for stable classifications that future
 recalls should filter on.
 
+Entity labels are extracted by Hindsight from retained content. Use them for
+classifications the model can infer from the content. Do not use entity labels
+for fields the writer already knows and should stamp deterministically, such as
+`source:<system>`, `agent_profile:<name>`, `repo:<name>`, `document_id`, file
+paths, commit hashes, or ingestion job IDs. Those belong in integration tags or
+metadata.
+
 Good entity label dimensions:
 
 - `domain`: business, product, engineering, infrastructure, operations, finance, legal, research
@@ -256,6 +299,13 @@ because wording may drift.
 
 Use observation scopes when a shared bank needs durable patterns at specific
 tag levels.
+
+Observation scopes are retain-time behavior for memories/items, not a general
+bank-template field. Capture the observation-scope strategy in the architecture
+and integration/ingestion guidance unless the target template format explicitly
+supports encoding it. Do not imply that named observation scopes can be set once
+globally in the bank template unless the current Hindsight template schema
+supports that field.
 
 - `combined`: best for simple single-subject banks.
 - `per_tag`: best when individual tags represent independent subjects, such as user, team, service, or project.
@@ -362,6 +412,22 @@ Tags on a mental model both filter which memories build it and control which
 recall/reflect calls can see it. Use this to create scoped models inside a
 shared bank.
 
+Important: do not use mental model `tags` as merely descriptive labels. In
+Hindsight, mental model tags affect both visibility and refresh/source-memory
+selection. Tagged mental models commonly refresh with strict matching semantics,
+so a model tagged with many tags may only read memories that contain every one
+of those tags. That can accidentally produce empty or overly narrow mental
+models.
+
+Mental model tag guidance:
+
+- Use the fewest tags needed to scope source memories and visibility.
+- Prefer one broad subject tag such as `domain:product` over many `memory_type:*` tags when the model should synthesize several memory types.
+- Do not tag a model with multiple alternative memory types such as `memory_type:mission`, `memory_type:vision`, and `memory_type:decision` unless source memories are expected to carry all of them together.
+- If the model should read an OR set of tags, use `trigger.tag_groups` or another supported filter mechanism from the current template schema instead of stacking tags as if they were descriptive metadata.
+- If tag filters are too restrictive, leave `tags` empty and make the `source_query` precise, or create multiple narrower mental models.
+- Use the model `name` and `source_query` for human description. Use tags only for real visibility/source filtering.
+
 ## Architecture Archetypes
 
 Use archetypes as starting points, not rules. Always adjust for privacy,
@@ -442,11 +508,12 @@ Common tags: `issuer:<ticker>`, `sector:<name>`, `source:<provider>`,
 ### Observability, Monitoring, Or Incident Automation
 
 Keep high-volume operational streams out of broad human operating memory unless
-they are summarized before retain.
+they are curated into durable records that preserve the important evidence.
 
 - Use a separate observability bank when retaining frequent alerts, metrics summaries, incident traces, or log-derived observations.
 - Use the main company/platform bank only for durable incident learnings, accepted remediations, and architectural decisions.
-- Prefer summarized incident records over raw logs.
+- Prefer structured incident records, postmortems, sampled events, and curated log excerpts over raw log firehoses.
+- Avoid pre-summarizing normal incident conversations or investigation transcripts; retain the rich transcript or postmortem when practical so Hindsight can extract facts with less fidelity loss.
 
 Common tags: `env:<name>`, `service:<name>`, `incident:<id>`,
 `severity:<level>`, `signal:latency`, `signal:error-rate`,
@@ -482,7 +549,10 @@ scopes.
 ### Mental Models
 
 List the mental models to create, including suggested tags and refresh
-strategy.
+strategy. Verify that model tags are real source/visibility filters, not just
+descriptive labels. If the model needs OR filtering across domains or memory
+types, specify supported `trigger.tag_groups` rather than stacking tags that
+will be interpreted as an AND-style source filter.
 
 ### Integration Defaults
 
@@ -536,6 +606,8 @@ Include a short checklist:
 - Every non-default bank field has a defensible reason.
 - Entity label values match the proposed tag taxonomy.
 - Mental model tags align with intended visibility and source memory filters.
+- Mental model tags are not being used as descriptive metadata; long tag lists are checked for accidental over-filtering.
+- OR-style mental model source filters use supported `trigger.tag_groups` or separate models instead of many tags on one model.
 - Directives are true hard rules, not general preferences.
 - Integration defaults cover bank ID, retain tags, document IDs, source metadata, and recall filters.
 
@@ -563,11 +635,13 @@ Put this in integrations or ingestion code:
 - Dynamic bank ID strategy
 - Default retain tags
 - Default recall tags and `tags_match`
+- Retain-time `observation_scopes` strategy when scoped observations are needed
 - Source-specific metadata
 - Document ID conventions
 - Retain cadence
 - Which roles/tool calls to retain
 - Whether a writer should read broadly or with strict filters
+- Whether any high-volume source needs sampling, excerpting, async retain, or a separate bank instead of pre-summarization
 
 Put this in human/agent operating docs:
 
@@ -575,6 +649,7 @@ Put this in human/agent operating docs:
 - When to create a new bank
 - When to create a new mental model
 - What should never be retained
+- What should be retained as rich/raw structured source material rather than pre-summarized text
 - How to handle sensitive data
 
 ## Minimal Template Example
@@ -646,6 +721,7 @@ the corpus does not drown out operating memory. Link it conceptually with tags
 and naming, but do not force operational agents to search it by default.
 
 Observability: If monitoring agents retain frequent alerts or metric summaries,
-prefer a separate observability bank or summarize heavily before retaining into
-the platform bank. Durable incident learnings and remediation decisions can be
-promoted into the main platform bank.
+prefer a separate observability bank, sampling, curated excerpts, or structured
+incident records instead of pushing raw firehoses into the platform bank. Retain
+rich incident conversations and postmortems when practical. Durable incident
+learnings and remediation decisions can be promoted into the main platform bank.
