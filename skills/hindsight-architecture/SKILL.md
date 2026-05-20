@@ -115,6 +115,7 @@ Generate minimal templates.
 - Include missions, entity labels, directives, and mental models when they are part of the designed architecture.
 - Include `retain_extraction_mode` only when changing away from the default or when paired with `retain_custom_instructions`.
 - Include `retain_custom_instructions` only when `retain_extraction_mode` is `custom` and custom extraction rules are actually needed.
+- Include `retain_strategies` and `retain_default_strategy` only when the architecture has multiple durable content classes that need different extraction settings in the same bank.
 - Include disposition traits only when the reflect behavior needs a defensible non-default posture.
 - Include recall budget or consolidation tuning only when the user has a concrete latency, quality, scale, or cost reason.
 - Include `mcp_enabled_tools` only when the architecture needs tool restrictions.
@@ -173,13 +174,21 @@ List harnesses, agent profiles, CI jobs, ingestion pipelines, monitoring
 systems, chat interfaces, and humans. Treat these as source/profile tags unless
 they need hard isolation.
 
-5. Identify retrieval modes.
+5. Identify retained content classes.
+
+Ask what kinds of source material will be retained and whether they need
+different extraction behavior. Examples: conversations, voice memos, specs,
+ADRs, legal source documents, product docs, filings, support tickets,
+postmortems, logs, metrics, and generated artifacts. This determines whether
+named retain strategies are needed.
+
+6. Identify retrieval modes.
 
 Ask whether default recall should be broad, scoped, or strict. Broad default
 recall favors fewer banks. Strict per-user/customer recall favors either
 separate banks or mandatory strict tags.
 
-6. Identify high-volume/noisy streams.
+7. Identify high-volume/noisy streams.
 
 Separate, defer, sample, or configure dedicated ingestion for high-volume
 observability, public research corpora, market data, logs, and generated
@@ -187,7 +196,7 @@ analysis artifacts if they might overwhelm durable operating memory. Do not
 recommend pre-summarizing normal conversations, docs, transcripts, specs, or
 agent sessions before retain.
 
-7. Define mental models.
+8. Define mental models.
 
 Use mental models as curated cross-sections of one bank, not as a substitute
 for bank design. Prefer narrow mental models over one giant summary.
@@ -251,6 +260,65 @@ Exceptions are narrow and should be explicit:
 Even in exception cases, prefer retaining curated excerpts, structured incident
 records, sampled events, or human/agent-authored postmortems rather than vague
 summaries. Make the tradeoff explicit.
+
+## Retain Strategies
+
+Retain strategies are named per-call extraction profiles for a bank. They let a
+single bank ingest different content types with different retain settings while
+preserving one shared memory world.
+
+Use retain strategies when the same bank receives multiple durable content
+classes that need different extraction behavior. Do not create a new bank just
+because conversations, documents, voice memos, and specs need different retain
+settings.
+
+Strategies can override hierarchical bank config fields such as:
+
+- `retain_mission`
+- `retain_extraction_mode`
+- `retain_custom_instructions`
+- `retain_chunk_size`
+- `entity_labels`
+- `entities_allow_free_form`
+
+Extraction modes:
+
+- `concise`: default. Selective durable fact extraction. Best default for conversations, agent sessions, owner notes, and general operating memory.
+- `verbose`: richer fact extraction with more detail. Use when losing nuance would be costly, such as detailed specs, ADRs, incident postmortems, legal-adjacent operating documents, or high-value voice memos.
+- `verbatim`: stores chunks as-is while still using the LLM to extract entities, temporal information, and indexing metadata. Use for source documents where exact wording matters and the original text should be recallable.
+- `chunks`: stores chunks as-is with no LLM fact extraction. Use for low-cost, high-volume, RAG-style ingestion where semantic search over chunks is enough and structured entities/temporal indexing are less important.
+- `custom`: replaces extraction rules. Use only when `retain_mission` and the standard modes cannot express the inclusion/exclusion policy.
+
+Strategy design guidance:
+
+- Prefer the bank-level default behavior for the common case; do not define a strategy that only restates defaults.
+- Define named strategies for meaningful differences, such as `conversation`, `voice-memo`, `source-document`, `legal-source`, `spec-or-adr`, `generated-artifact`, `research-document`, or `observability-event`.
+- Keep strategy names semantic and stable because integrations must pass them during retain.
+- If a strategy changes away from defaults, explain why the content class needs that behavior.
+- Use strategies to preserve fidelity, not to pre-summarize. For example, choose `verbose` or `verbatim` for high-value source material instead of summarizing upstream.
+- Use `chunks` only when the loss of extracted facts/entities/temporal data is acceptable.
+- If many strategies are needed because corpora are unrelated, reconsider whether separate banks are cleaner.
+
+Bank template guidance:
+
+- Put `retain_strategies` in the bank template when the strategy set is stable and central to the architecture.
+- Put `retain_default_strategy` in the template only when calls that omit `strategy` should intentionally use a named non-default strategy.
+- Omit `retain_default_strategy` when the bank-level config is the desired default.
+- Omit strategy fields that merely duplicate bank defaults.
+
+Integration guidance:
+
+- Each writer should know which strategy to pass for each content class.
+- Document ingestion, file retain, MCP retain, opencode/OpenClaw hooks, CI jobs, and voice memo ingestion may need different strategy defaults.
+- Include strategy selection alongside default tags, `document_id`, metadata, retain cadence, and async behavior.
+
+Example strategy patterns:
+
+- Company operating bank: default concise extraction for conversations; `spec-or-adr` with `verbose`; `source-document` with `verbatim`; `generated-artifact` only when the artifact is the durable source of record.
+- Personal assistant bank: default concise extraction; `voice-memo` with `verbose` if owner memos are dense and high-value; `reference-doc` with `verbatim` for exact documents.
+- Customer support bank: default concise extraction for tickets/conversations; `product-doc` with `verbatim` or `chunks`; `escalation` with `verbose`.
+- Research bank: `filing` or `source-document` with `verbatim` for exact source recall; `bulk-corpus` with `chunks` when cost/volume matters more than structured facts; `analyst-note` with `verbose`.
+- Observability bank: `incident-postmortem` with `verbose`; `event-sample` or `metric-summary` with `chunks` only when structured extraction is not worth the cost.
 
 ## Tag Rules
 
@@ -376,6 +444,59 @@ Prefer omitting disposition fields unless the architecture clearly benefits from
 one of these non-default postures. If included in a generated template, explain
 why each trait is set and how it supports the bank's purpose.
 
+## Directives
+
+Directives are hard rules for `reflect`. They do not affect `retain`, fact
+extraction, observation consolidation, recall ranking, or how source content is
+stored. Do not use directives to tell Hindsight what to extract from voice
+memos, specs, legal documents, implementation sessions, or other retained
+content. Put extraction guidance in `retain_mission`, named `retain_strategies`,
+or integration-specific retain behavior.
+
+Use directives only for rules that must govern generated reflect answers:
+
+- Compliance guardrails: "Do not provide legal, tax, medical, or investment advice."
+- Privacy constraints: "Do not reveal restricted customer information unless the reflect request is scoped to that customer."
+- Source-grounding requirements: "When making factual claims, distinguish retained facts from inference."
+- Domain constraints: "Do not invent product capabilities that are not grounded in retained product facts."
+- Response requirements: "Cite or summarize the memories that support high-impact recommendations when available."
+
+Do not use directives for:
+
+- Extraction instructions such as "extract durable ideas from voice memos."
+- Retention routing such as "preserve implementation deviations as product context."
+- Tagging policy such as "tag owner notes as high value."
+- General preferences that belong in `reflect_mission` or disposition.
+- Mental model refresh behavior.
+
+Directive tag semantics:
+
+- Untagged directives apply broadly to reflect.
+- Tagged directives apply only when reflect is called with matching tags; they do not automatically apply because matching memories exist in the bank.
+- Directive tags are filters/visibility scopes, not descriptive metadata.
+- Do not tag a directive unless integrations will intentionally pass matching reflect tags for the scenarios where it should apply.
+
+Directive design guidance:
+
+- Keep directives few, short, and enforceable.
+- Prefer one broad directive for an always-on hard rule over many overlapping directives.
+- Use high priority only when ordering matters; omit `priority` when the default is sufficient.
+- Omit `is_active: true` when generating minimal templates unless the template format requires it, because it is the default.
+- If a candidate directive includes words like "extract", "retain", "store", "tag", "preserve as memory", or "ignore filler", move it to retain strategy guidance unless it is explicitly about reflect output.
+
+Examples of good directives:
+
+- "Do not present legal-source memories as legal advice. Distinguish source-backed facts from interpretation and recommend professional review for legal conclusions."
+- "Do not invent product capabilities. If retained product facts are missing or conflicting, say so."
+- "For investment analysis, separate evidence, inference, and uncertainty. Do not make personalized investment recommendations."
+
+Examples that should be retain strategy or retain mission instead:
+
+- "Extract durable ideas, concerns, decisions, next steps, and priorities from owner voice memos."
+- "If implementation work uncovers a constraint, preserve it as product or planning context."
+- "Ignore filler and uncertain transcription artifacts."
+- "Connect mission, personas, PRDs, specs, architecture, and implementation decisions during extraction."
+
 ## Mental Models
 
 Use mental models to make broad banks usable. They provide curated, fast,
@@ -439,12 +560,39 @@ models.
 Mental model tag guidance:
 
 - Use the fewest tags needed to scope source memories and visibility.
+- In bank templates, omitted mental model `tags` and `tags: []` both import as untagged. Prefer omitting `tags` in minimal templates when the model should be untagged.
 - Remember that tagged mental models may only be visible to recall/reflect calls whose tag filters match them. If the model should be available during broad untagged reflection, leave `tags` empty or ensure integrations pass matching recall/reflect tags intentionally.
 - Prefer one broad subject tag such as `domain:product` over many `memory_type:*` tags when the model should synthesize several memory types.
 - Do not tag a model with multiple alternative memory types such as `memory_type:mission`, `memory_type:vision`, and `memory_type:decision` unless source memories are expected to carry all of them together.
 - If the model should read an OR set of tags, use `trigger.tag_groups` or another supported filter mechanism from the current template schema instead of stacking tags as if they were descriptive metadata.
 - If tag filters are too restrictive, leave `tags` empty and make the `source_query` precise, or create multiple narrower mental models.
 - Use the model `name` and `source_query` for human description. Use tags only for real visibility/source filtering.
+
+Mental model refresh guidance:
+
+- Mental models are saved reflect outputs. They are not live queries by default and can become stale unless refreshed.
+- Manual refresh is the safest default for curated, strategic, legal-adjacent, compliance-sensitive, source-of-truth, or human-reviewed models.
+- Automatic refresh via `trigger.refresh_after_consolidation: true` is best for operational summaries that should track evolving memory without manual review.
+- Use `mode: "full"` for short summaries and snapshots where full regeneration is acceptable.
+- Use `mode: "delta"` for longer playbook-style or structured models where stable sections should remain mostly unchanged across refreshes.
+- Do not enable automatic refresh on every mental model by default. Each model needs a reason to auto-refresh.
+- If a model auto-refreshes, verify its source filters are not too broad, too narrow, or dependent on descriptive tags.
+
+Common refresh choices:
+
+- Personal assistant: auto-refresh current commitments, current projects, and communication preferences if they evolve often; manually refresh sensitive health, legal, or finance summaries.
+- Customer support: auto-refresh customer account summaries, open risks, and prior resolutions for active customers; manually refresh curated policy or escalation playbooks.
+- Company/platform: auto-refresh current risks, open questions, and product-to-implementation feedback; consider manual refresh for company mission, strategy, legal, and business operations summaries.
+- Engineering platform: auto-refresh active architecture risks and implementation feedback; manually refresh accepted engineering principles or ADR summaries if they require review.
+- Research/investment analysis: usually manually refresh thesis/recommendation models unless the workflow explicitly wants live dashboards; auto-refresh evidence or open-question trackers only with defensible source filters.
+
+Template guidance for triggers:
+
+- Omit `trigger` when manual refresh is intended; this keeps the template minimal.
+- Include `trigger.refresh_after_consolidation: true` only when auto-refresh is intentionally part of the architecture.
+- Include `trigger.mode` only when choosing a non-default mode or when clarity is worth the extra config.
+- Include `trigger.tag_groups`, `fact_types`, or exclusion options only when needed to make refresh source selection correct.
+- Explain every auto-refresh trigger in the template plan.
 
 ## Architecture Archetypes
 
@@ -565,6 +713,13 @@ Specify whether to use `combined`, `per_tag`, `all_combinations`, or custom
 scopes. For custom scopes, provide concrete tag arrays or a deterministic rule
 for integrations to derive concrete arrays at retain time.
 
+### Retain Strategies
+
+List content classes that need named retain strategies, the intended extraction
+mode and overrides for each, which strategy is the default if any, and which
+integrations should pass each strategy. If no strategies are needed, state that
+the bank-level retain config is sufficient.
+
 ### Mental Models
 
 List the mental models to create, including suggested tags and refresh
@@ -572,11 +727,20 @@ strategy. Verify that model tags are real source/visibility filters, not just
 descriptive labels. If the model needs OR filtering across domains or memory
 types, specify supported `trigger.tag_groups` rather than stacking tags that
 will be interpreted as an AND-style source filter.
+For each model, state whether refresh is manual or automatic. If automatic,
+explain why `refresh_after_consolidation` is appropriate and what source filters
+prevent drift or over-broad refreshes.
 
 ### Integration Defaults
 
 Describe how opencode, OpenClaw, CI, ingestion jobs, and monitoring systems
 should set bank IDs, retain tags, source metadata, and recall behavior.
+
+### Directives
+
+List only hard reflect-time rules that must govern generated answers. Reject or
+move any candidate directive that controls extraction, retention, tagging,
+observation, or mental model refresh behavior.
 
 ### Template Boundary
 
@@ -623,13 +787,19 @@ Include a short checklist:
 - No copied placeholder mental models or directives remain.
 - No field is set to a default value just for completeness.
 - Every non-default bank field has a defensible reason.
+- Retain strategies are included only for meaningful per-content extraction differences, not as aliases for defaults.
+- Every named retain strategy has an integration or ingestion path that will pass it intentionally.
 - Entity label values match the proposed tag taxonomy.
 - Mental model tags align with intended visibility and source memory filters.
 - Tagged mental models that should be broadly visible have matching integration recall/reflect tag strategy, or are left untagged with precise source queries.
 - Mental model tags are not being used as descriptive metadata; long tag lists are checked for accidental over-filtering.
 - OR-style mental model source filters use supported `trigger.tag_groups` or separate models instead of many tags on one model.
+- Each mental model has an explicit manual-vs-auto refresh decision.
+- Auto-refresh mental models have a defensible trigger and source-filter strategy; strategic, legal-adjacent, and curated models default to manual refresh.
 - Observation scopes are concrete retain-time tag arrays or deterministic integration rules, not vague labels.
 - Directives are true hard rules, not general preferences.
+- Directives do not contain retain/extraction instructions; those are represented in retain missions, retain strategies, or integration defaults.
+- Tagged directives have an explicit reflect tag strategy so they will apply when intended.
 - Integration defaults cover bank ID, retain tags, document IDs, source metadata, and recall filters.
 
 ## Template Boundary Checklist
@@ -639,6 +809,7 @@ Put this in a bank template:
 - `retain_mission`
 - `observations_mission`
 - `reflect_mission`
+- `retain_strategies` and `retain_default_strategy` when stable content classes need different extraction behavior
 - Disposition traits
 - Entity labels
 - Directives
@@ -655,7 +826,9 @@ Put this in integrations or ingestion code:
 - Default `bank_id`
 - Dynamic bank ID strategy
 - Default retain tags
+- Default retain strategy or per-content strategy selection
 - Default recall tags and `tags_match`
+- Reflect tag strategy for any tagged directives or tagged mental models
 - Retain-time `observation_scopes` strategy when scoped observations are needed
 - Source-specific metadata
 - Document ID conventions
@@ -713,6 +886,56 @@ bank fields.
 In this example, defaults such as `retain_extraction_mode: concise`,
 `retain_chunk_size: 3000`, `enable_observations: true`, recall budget mapping,
 and consolidation tuning are intentionally omitted.
+
+Minimal retain strategy example for a bank that needs different extraction for
+conversations and exact source documents:
+
+```json
+{
+  "version": "1",
+  "bank": {
+    "retain_mission": "Extract durable decisions, preferences, commitments, risks, and source-grounded facts. Preserve rationale and contradictions when they matter for future work.",
+    "retain_strategies": {
+      "voice-memo": {
+        "retain_extraction_mode": "verbose",
+        "retain_mission": "Extract durable ideas, concerns, decisions, next steps, priorities, and uncertainty from owner voice memo transcripts. Ignore filler and clearly uncertain transcription artifacts."
+      },
+      "source-document": {
+        "retain_extraction_mode": "verbatim",
+        "retain_mission": "Preserve source document wording while extracting entities, dates, and source-grounded metadata for retrieval."
+      },
+      "spec-or-adr": {
+        "retain_extraction_mode": "verbose",
+        "retain_mission": "Extract design decisions, constraints, alternatives considered, rationale, risks, and implementation implications."
+      }
+    }
+  }
+}
+```
+
+This example omits a `conversation` strategy because the bank-level default
+already handles normal conversations with concise extraction. It also omits
+`retain_default_strategy` because retain calls without an explicit strategy
+should use the bank-level config.
+
+Directive example for the same bank:
+
+```json
+{
+  "directives": [
+    {
+      "name": "Do Not Treat Legal Sources As Legal Advice",
+      "content": "When reflecting on legal-source memories, treat them as source-backed company context, not legal advice. Distinguish quoted or source-backed facts from interpretation and surface uncertainty when legal meaning is unclear.",
+      "tags": ["domain:legal"]
+    }
+  ]
+}
+```
+
+The voice memo extraction rule belongs in the `voice-memo` retain strategy, not
+in a directive. The legal rule is a directive because it governs generated
+reflect answers. Because it is tagged, integrations must pass matching reflect
+tags such as `domain:legal` when the rule should apply.
 
 ## Example Reasoning
 
