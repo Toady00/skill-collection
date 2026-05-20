@@ -1,7 +1,7 @@
 ---
 name: hindsight-architecture
 description: Use when designing Hindsight memory bank architecture, tags, entity labels, observation scopes, mental models, or bank templates for agent memory systems.
-version: 0.1.2
+version: 0.1.3
 ---
 
 # Hindsight Architecture
@@ -109,6 +109,7 @@ creates noise and hides the user's intentional configuration.
 Generate minimal templates.
 
 - Omit bank fields that would be set to their default value.
+- Omit nested defaults too, including mental model `max_tokens: 2048`, empty mental model `tags`, default mental model `trigger`, directive `priority: 0`, directive `is_active: true`, and empty directive `tags`.
 - Omit `null` fields unless the template format specifically requires them.
 - Omit empty `mental_models` and `directives` arrays unless the user's target format requires arrays to be present.
 - Omit example placeholders from the reference file.
@@ -475,6 +476,7 @@ Directive tag semantics:
 - Tagged directives apply only when reflect is called with matching tags; they do not automatically apply because matching memories exist in the bank.
 - Directive tags are filters/visibility scopes, not descriptive metadata.
 - Do not tag a directive unless integrations will intentionally pass matching reflect tags for the scenarios where it should apply.
+- If a directive is a harmless always-on conditional guardrail, prefer leaving it untagged over risking that it will not apply. Example: "When reflecting on legal-adjacent memories, do not treat them as legal advice" can be untagged because it only activates semantically when legal-adjacent content is present.
 
 Directive design guidance:
 
@@ -820,6 +822,10 @@ Put this in a bank template:
 Only include these fields when they are intentionally configured. The existence
 of a field in the reference template does not mean it should appear in generated
 output.
+
+The same minimality rule applies inside nested objects. Do not emit mental model
+`max_tokens: 2048`, empty `tags`, or default `trigger` blocks. Do not emit
+directive `priority: 0`, `is_active: true`, or empty `tags`.
 
 Put this in integrations or ingestion code:
 
